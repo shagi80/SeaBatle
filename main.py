@@ -94,6 +94,7 @@ class Board:
     SM_SHIP = '■'
     SM_DESTROY = 'X'
     SM_MISS = 'T'
+    SM_CONTOUR = '*'
 
     def __init__(self, size):
         self.size = size
@@ -120,7 +121,7 @@ class Board:
         self.ship_afloat += 1
 
     def print_board(self, hide_ship=False):
-        print('\n ', '|'.join([str(i) for i in range(self.size)]))
+        print(' ', '|'.join([str(i) for i in range(self.size)]))
         for i in range(len(self._dots)):
             row = self._dots[i]
             if hide_ship:
@@ -138,9 +139,26 @@ class Board:
                 if shot_dot in ship.dots:
                     self._dots[shot_dot.y][shot_dot.x] = self.SM_DESTROY
                     ship.hit()
+                    if ship.lives == 0:
+                        self.ship_afloat -= 1
                     return ship
         self._dots[shot_dot.y][shot_dot.x] = self.SM_MISS
         return None
+
+    def contour(self, ship):
+        if ship.direction == Ship.SHIP_DIRECTION_HORIZ:
+            max_x = ship.board_len + 2
+            max_y = 3
+        else:
+            max_x = 3
+            max_y = ship.board_len + 2
+        for y in range(max_y):
+            for x in range(max_x):
+                dot_x = ship.head_dot.x - 1 + x
+                dot_y = ship.head_dot.y - 1 + y
+                if self.size > dot_x >= 0 and self.size > dot_y >= 0\
+                        and self._dots[dot_y][dot_x] == self.SM_EMPTY_FIELD:
+                    self._dots[dot_y][dot_x] = self.SM_CONTOUR
 
 
 class Player:
@@ -198,28 +216,20 @@ class Game:
 
     def random_board(self, size):
         MAX_INTERATION = 10000
-
-        def set_ship(ship_len, max_interation):
-            if max_interation == 0:
-                raise RandomizeException
-            else:
-                head_dot = Dot(randint(0, size - 1), randint(0, size - 1))
-                ship = Ship(head_dot, ship_len, randint(0, 1))
-                try:
-                    new_board.add_ship(ship)
-                except ShipAddException:
-                    set_ship(ship_len, max_interation - 1)
-
         board_interation = 0
         while True:
             new_board = Board(size)
             # Идем по списку размеров корбалей
             for length in Game.SHIPS_LIST:
                 # Пытаемся разместить на поле случайный корабль MAX_INTERATION раз
-                try:
-                    set_ship(length, MAX_INTERATION)
-                except RandomizeException:
-                    break
+                i = 0
+                while i < MAX_INTERATION:
+                    try:
+                        head_dot = Dot(randint(0, size - 1), randint(0, size - 1))
+                        new_board.add_ship(Ship(head_dot, length, randint(0, 1)))
+                        break
+                    except ShipAddException:
+                        i += 1
             # Если все корабли созданы возрващаем доску
             if new_board.ship_afloat == len(Game.SHIPS_LIST):
                 return new_board
@@ -229,37 +239,76 @@ class Game:
                 if board_interation >= MAX_INTERATION:
                     raise RandomizeException
 
+    def greet(self):
+        print('\nМОРСКОЙ БОЙ')
+        print('-'*20)
+        print('\nНа поле 6х6 клеток размещается 7 кораблей - один трех трубный, два двух трубных и четыре',
+              'однотрубных.')
+        print('Корабли расставляются на поле автоматически в случайном порядке.')
+        print('Ваш ход первый, ну а дальше вы знаете.')
+        input('\nДля начала игры нажмите [ENTER] ...')
+
     def loop(self):
+
+        def print_boards():
+            print('\nПоле игрока:')
+            self.user_board.print_board()
+            print('\nПоле компьютера:')
+            self.ai_board.print_board(hide_ship=True)
+
         while True:
             while True:
-                self.ai_board.print_board(hide_ship=True)
-                ship = self.user.move()
-                if ship:
-                    if not ship.lives:
-                        print(f'\nПападание ! Вражеский {ship.description} уничтожен !')
+                while self.user_board.ship_afloat and self.ai_board.ship_afloat:
+                    print_boards()
+                    ship = self.user.move()
+                    if ship:
+                        if not ship.lives:
+                            print(f'\nПападание ! Вражеский {ship.description} уничтожен !')
+                            self.ai_board.contour(ship)
+                        else:
+                            print('\nПападание ! Корабль противнека подбит, но еще на плаву !')
+                        if self.ai_board.ship_afloat:
+                            print('Отличная работа ! Стреляйте еще раз !')
+                        else:
+                            print('\nПоздравляю, вы победили !')
+                            break
                     else:
-                        print('\nПападание ! Корабль противнека подбит, но еще на плаву !')
-                    print('Отличная работа ! Стреляйте еще раз !')
-                else:
-                    print('\nК сожалению вы промахнулись ! Компьютер наносит ответный удар ...')
+                        print('\nК сожалению вы промахнулись ! Компьютер наносит ответный удар ...')
+                        break
+
+                while self.user_board.ship_afloat and self.ai_board.ship_afloat:
+                    ship = self.ai_player.move()
+                    print_boards()
+                    if ship:
+                        if not ship.lives:
+                            print(f'\nПападание ! Ваш {ship.description} уничтожен !')
+                        else:
+                            print(f'\nПападание ! Ваш {ship.description} подбит, но еще на плаву !')
+                        if self.user_board.ship_afloat:
+                            print('Они снова заряжат пушку ! Зачем ? А, они будут стрелять !')
+                            input('\nНажимите [ЕNTER] ... ')
+                        else:
+                            print('\nК сожалению вы проиграли !')
+                            break
+                    else:
+                        print('\nВраг промахнулся ! Ваша очередь стрелять.')
+                        input('Нажимет [ЕNTER] ... ')
+                        break
+
+                if not self.user_board.ship_afloat or not self.ai_board.ship_afloat:
                     break
 
-            while True:
-                ship = self.ai_player.move()
-                self.user_board.print_board()
-                if ship:
-                    if not ship.lives:
-                        print(f'\nПападание ! Ваш {ship.description} уничтожен !')
-                    else:
-                        print(f'\nПападание ! Ваш {ship.description} подбит, но еще на плаву !')
-                    print('Они снова заряжат пушку ! Зачем ? А, они будут стрелять !')
-                    input('\nНажимет [ЕNTER] ... ')
-                else:
-                    print('\nВраг промахнулся ! Ваша очередь стрелять.')
-                    input('Нажимет [ЕNTER] ... ')
-                    break
+            if input('\nПопробовать еще раз [y/n] ? : ').upper() == 'Y':
+                self.user_board = self.random_board(6)
+                self.ai_board = self.random_board(6)
+            else:
+                quit()
+
+    def start(self):
+        self.greet()
+        self.loop()
 
 
 game = Game()
 
-game.loop()
+game.start()
